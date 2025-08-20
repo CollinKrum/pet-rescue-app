@@ -1,9 +1,3 @@
-console.log("Application is starting...");
-// Your code here
-
-app.listen(PORT, () => {
-  console.log(`Server is listening on port ${PORT}`);
-});
 // Pet Rescue Backend API
 // This is a Node.js/Express server with web scraping capabilities
 
@@ -14,6 +8,10 @@ const axios = require('axios');
 const cheerio = require('cheerio');
 const { Pool } = require('pg');
 require('dotenv').config();
+
+// ---------------------------------------------------------------- //
+// Core Application Setup                                           //
+// ---------------------------------------------------------------- //
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -27,6 +25,10 @@ const pool = new Pool({
 // Middleware
 app.use(cors());
 app.use(express.json());
+
+// ---------------------------------------------------------------- //
+// Database Functions                                               //
+// ---------------------------------------------------------------- //
 
 // Database schema - run this to create tables
 const initDatabase = async () => {
@@ -53,6 +55,15 @@ const initDatabase = async () => {
       is_active BOOLEAN DEFAULT true
     );
 
+    CREATE TABLE IF NOT EXISTS alert_subscriptions (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      states JSONB,
+      species JSONB,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+
     CREATE INDEX IF NOT EXISTS idx_pets_state ON pets(state);
     CREATE INDEX IF NOT EXISTS idx_pets_species ON pets(species);
     CREATE INDEX IF NOT EXISTS idx_pets_urgency ON pets(urgency_level);
@@ -68,8 +79,40 @@ const initDatabase = async () => {
   }
 };
 
-// Pet scraper classes for different sources
+// Data processing functions
+const savePetToDB = async (pet) => {
+  const query = `
+    INSERT INTO pets (
+      name, species, breed, age, location, state, days_in_shelter,
+      days_until_euthanasia, urgency_level, description, contact_phone,
+      contact_email, source_name, source_url, image_url, posted_date
+    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    ON CONFLICT DO NOTHING
+    RETURNING id
+  `;
+
+  const values = [
+    pet.name, pet.species, pet.breed, pet.age, pet.location, pet.state,
+    pet.days_in_shelter, pet.days_until_euthanasia, pet.urgency_level,
+    pet.description, pet.contact_phone, pet.contact_email, pet.source_name,
+    pet.source_url, pet.image_url, pet.posted_date
+  ];
+
+  try {
+    const result = await pool.query(query, values);
+    return result.rows[0]?.id;
+  } catch (error) {
+    console.error('Error saving pet to database:', error);
+    return null;
+  }
+};
+
+// ---------------------------------------------------------------- //
+// Scraper Classes                                                  //
+// ---------------------------------------------------------------- //
+
 class PetfinderScraper {
+  // ... (Your existing PetfinderScraper class) ...
   constructor() {
     this.baseUrl = 'https://www.petfinder.com';
     this.searchUrl = 'https://www.petfinder.com/search/pets-for-adoption';
@@ -114,6 +157,7 @@ class PetfinderScraper {
 }
 
 class AdoptAPetScraper {
+  // ... (Your existing AdoptAPetScraper class) ...
   constructor() {
     this.baseUrl = 'https://www.adopt-a-pet.com';
   }
@@ -165,69 +209,67 @@ class AdoptAPetScraper {
 }
 
 class FacebookGroupScraper {
-  // Note: Facebook scraping is complex due to authentication and anti-bot measures
-  // This is a conceptual implementation - you'd need Facebook Graph API access
-  
-  constructor() {
-    this.accessToken = process.env.FACEBOOK_ACCESS_TOKEN;
-  }
-
-  async scrapePosts(groupId) {
-    try {
-      // This would require Facebook Graph API
-      const response = await axios.get(
-        `https://graph.facebook.com/v18.0/${groupId}/feed`,
-        {
-          params: {
-            access_token: this.accessToken,
-            fields: 'message,created_time,attachments'
-          }
-        }
-      );
-
-      const posts = response.data.data;
-      const pets = [];
-
-      posts.forEach(post => {
-        if (this.isPetPost(post.message)) {
-          const pet = this.extractPetInfo(post);
-          if (pet) pets.push(pet);
-        }
-      });
-
-      return pets;
-    } catch (error) {
-      console.error('Error scraping Facebook:', error);
-      return [];
+    // ... (Your existing FacebookGroupScraper class) ...
+    constructor() {
+      this.accessToken = process.env.FACEBOOK_ACCESS_TOKEN;
     }
-  }
-
-  isPetPost(message) {
-    if (!message) return false;
-    const keywords = ['adopt', 'rescue', 'shelter', 'euthanize', 'urgent', 'foster'];
-    return keywords.some(keyword => message.toLowerCase().includes(keyword));
-  }
-
-  extractPetInfo(post) {
-    // Extract pet information from Facebook post using NLP/regex
-    // This is a simplified version - you'd want more sophisticated parsing
-    const message = post.message || '';
-    
-    return {
-      name: this.extractName(message),
-      description: message.substring(0, 200),
-      source_name: 'Facebook Group',
-      source_url: `https://facebook.com/${post.id}`,
-      posted_date: new Date(post.created_time)
-    };
-  }
-
-  extractName(message) {
-    // Simple name extraction - you'd want better NLP
-    const nameMatch = message.match(/name[:\s]*([A-Z][a-z]+)/i);
-    return nameMatch ? nameMatch[1] : 'Unknown';
-  }
+  
+    async scrapePosts(groupId) {
+      try {
+        const response = await axios.get(
+          `https://graph.facebook.com/v18.0/${groupId}/feed`,
+          {
+            params: {
+              access_token: this.accessToken,
+              fields: 'message,created_time,attachments'
+            }
+          }
+        );
+  
+        const posts = response.data.data;
+        const pets = [];
+  
+        posts.forEach(post => {
+          if (this.isPetPost(post.message)) {
+            const pet = this.extractPetInfo(post);
+            if (pet) pets.push(pet);
+          }
+        });
+  
+        return pets;
+      } catch (error) {
+        console.error('Error scraping Facebook:', error);
+        return [];
+      }
+    }
+  
+    isPetPost(message) {
+      if (!message) return false;
+      const keywords = ['adopt', 'rescue', 'shelter', 'euthanize', 'urgent', 'foster'];
+      return keywords.some(keyword => message.toLowerCase().includes(keyword));
+    }
+  
+    extractPetInfo(post) {
+      const message = post.message || '';
+      
+      return {
+        name: this.extractName(message),
+        description: message.substring(0, 200),
+        source_name: 'Facebook Group',
+        source_url: `https://facebook.com/${post.id}`,
+        posted_date: new Date(post.created_time)
+      };
+    }
+  
+    extractName(message) {
+      const nameMatch = message.match(/name[:\s]*([A-Z][a-z]+)/i);
+      return nameMatch ? nameMatch[1] : 'Unknown';
+    }
 }
+
+// ---------------------------------------------------------------- //
+// Utility and Helper Functions                                     //
+// ---------------------------------------------------------------- //
 
 // Urgency calculator
 class UrgencyCalculator {
@@ -238,34 +280,6 @@ class UrgencyCalculator {
     return 'low';
   }
 }
-
-// Data processing functions
-const savePetToDB = async (pet) => {
-  const query = `
-    INSERT INTO pets (
-      name, species, breed, age, location, state, days_in_shelter,
-      days_until_euthanasia, urgency_level, description, contact_phone,
-      contact_email, source_name, source_url, image_url, posted_date
-    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-    ON CONFLICT DO NOTHING
-    RETURNING id
-  `;
-
-  const values = [
-    pet.name, pet.species, pet.breed, pet.age, pet.location, pet.state,
-    pet.days_in_shelter, pet.days_until_euthanasia, pet.urgency_level,
-    pet.description, pet.contact_phone, pet.contact_email, pet.source_name,
-    pet.source_url, pet.image_url, pet.posted_date
-  ];
-
-  try {
-    const result = await pool.query(query, values);
-    return result.rows[0]?.id;
-  } catch (error) {
-    console.error('Error saving pet to database:', error);
-    return null;
-  }
-};
 
 const processScrapedPets = async (scrapedPets) => {
   for (const pet of scrapedPets) {
@@ -285,12 +299,30 @@ const processScrapedPets = async (scrapedPets) => {
 const extractStateFromLocation = (location) => {
   if (!location) return null;
   
-  // Simple state extraction - you might want a more robust solution
   const stateMatch = location.match(/,\s*([A-Z]{2})/);
   return stateMatch ? stateMatch[1] : null;
 };
 
-// API Routes
+// Function to send critical alerts
+const sendCriticalAlerts = async (pet) => {
+  try {
+    const subscribers = await pool.query(`
+      SELECT email FROM alert_subscriptions
+      WHERE (states IS NULL OR states::jsonb ? $1)
+      AND (species IS NULL OR species::jsonb ? $2)
+    `, [pet.state, pet.species]);
+    
+    // Here you would integrate with an email service like SendGrid or Mailgun
+    console.log(`Would send alerts to ${subscribers.rows.length} subscribers for ${pet.name}`);
+  } catch (error) {
+    console.error('Error sending alerts:', error);
+  }
+};
+
+// ---------------------------------------------------------------- //
+// API Routes                                                       //
+// ---------------------------------------------------------------- //
+
 app.get('/api/pets', async (req, res) => {
   try {
     const {
@@ -477,32 +509,32 @@ app.get('/health', (req, res) => {
   });
 });
 
-// Function to send critical alerts
-const sendCriticalAlerts = async (pet) => {
-  try {
-    const subscribers = await pool.query(`
-      SELECT email FROM alert_subscriptions 
-      WHERE (states IS NULL OR states::jsonb ? $1)
-      AND (species IS NULL OR species::jsonb ? $2)
-    `, [pet.state, pet.species]);
-    
-    // Here you would integrate with an email service like SendGrid or Mailgun
-    console.log(`Would send alerts to ${subscribers.rows.length} subscribers for ${pet.name}`);
-  } catch (error) {
-    console.error('Error sending alerts:', error);
-  }
+// ---------------------------------------------------------------- //
+// Server Initialization                                            //
+// ---------------------------------------------------------------- //
+
+// This function wraps the server startup process to ensure the database
+// is initialized before the server starts listening for requests.
+const startServer = async () => {
+    try {
+        await initDatabase();
+
+        app.listen(PORT, () => {
+            console.log(`Server is listening on port ${PORT}`);
+        });
+
+        // Uncomment this to run the scraper on a schedule
+        // cron.schedule('0 0 * * *', async () => {
+        //   console.log('Running scheduled scraping job...');
+        //   const scraper = new PetfinderScraper();
+        //   const pets = await scraper.scrapePets('new york, ny');
+        //   await processScrapedPets(pets);
+        //   console.log('Scheduled scraping job completed.');
+        // });
+
+    } catch (error) {
+        console.error('Failed to start server:', error);
+    }
 };
 
-// Add table for subscriptions
-const createSubscriptionsTable = async () => {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS alert_subscriptions (
-      id SERIAL PRIMARY KEY,
-      email VARCHAR(255) UNIQUE NOT NULL,
-      states JSONB,
-      species JSONB,
-      created_at TIMESTAMP DEFAULT NOW(),
-      updated_at TIMESTAMP DEFAULT NOW()
-    );
-  `);
-};
+startServer();
