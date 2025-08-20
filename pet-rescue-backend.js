@@ -1,3 +1,9 @@
+console.log("Application is starting...");
+// Your code here
+
+app.listen(PORT, () => {
+  console.log(`Server is listening on port ${PORT}`);
+});
 // Pet Rescue Backend API
 // This is a Node.js/Express server with web scraping capabilities
 
