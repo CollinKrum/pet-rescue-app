@@ -368,6 +368,7 @@ app.get('/api/pets/:id', async (req, res) => {
   }
 });
 
+// Complete stats endpoint
 app.get('/api/stats', async (req, res) => {
   try {
     const stats = await pool.query(`
@@ -376,4 +377,126 @@ app.get('/api/stats', async (req, res) => {
         COUNT(*) FILTER (WHERE urgency_level = 'critical') as critical_pets,
         COUNT(*) FILTER (WHERE urgency_level = 'moderate') as moderate_pets,
         COUNT(*) FILTER (WHERE urgency_level = 'low') as low_pets,
-        COUNT(*) FILTER (WHERE species = 'Dog
+        COUNT(*) FILTER (WHERE species = 'Dog') as dogs,
+        COUNT(*) FILTER (WHERE species = 'Cat') as cats,
+        COUNT(DISTINCT state) as states_covered,
+        AVG(days_in_shelter) as avg_days_in_shelter
+      FROM pets 
+      WHERE is_active = true
+    `);
+
+    res.json(stats.rows[0]);
+  } catch (error) {
+    console.error('Error fetching stats:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Manual scraping trigger (for admin)
+app.post('/api/admin/scrape', async (req, res) => {
+  try {
+    const { location, species } = req.body;
+    
+    // Run scrapers
+    const petfinderScraper = new PetfinderScraper();
+    const adoptAPetScraper = new AdoptAPetScraper();
+    
+    const [petfinderPets, adoptAPetPets] = await Promise.all([
+      petfinderScraper.scrapePets(location, species),
+      adoptAPetScraper.scrapePets(location, species)
+    ]);
+    
+    const allPets = [...petfinderPets, ...adoptAPetPets];
+    await processScrapedPets(allPets);
+    
+    res.json({ 
+      message: 'Scraping completed', 
+      petsProcessed: allPets.length 
+    });
+  } catch (error) {
+    console.error('Error in manual scraping:', error);
+    res.status(500).json({ error: 'Scraping failed' });
+  }
+});
+
+// Email alerts for critical cases
+app.post('/api/alerts/subscribe', async (req, res) => {
+  try {
+    const { email, states, species } = req.body;
+    
+    // Store subscription in database
+    await pool.query(`
+      INSERT INTO alert_subscriptions (email, states, species, created_at)
+      VALUES ($1, $2, $3, NOW())
+      ON CONFLICT (email) DO UPDATE SET
+        states = $2, species = $3, updated_at = NOW()
+    `, [email, JSON.stringify(states), JSON.stringify(species)]);
+    
+    res.json({ message: 'Subscription saved' });
+  } catch (error) {
+    console.error('Error saving subscription:', error);
+    res.status(500).json({ error: 'Failed to save subscription' });
+  }
+});
+
+// Webhook for external integrations
+app.post('/api/webhook/new-pet', async (req, res) => {
+  try {
+    const petData = req.body;
+    
+    // Validate and process incoming pet data
+    petData.urgency_level = UrgencyCalculator.calculateUrgency(petData);
+    petData.state = extractStateFromLocation(petData.location);
+    
+    const petId = await savePetToDB(petData);
+    
+    // Trigger alerts for critical cases
+    if (petData.urgency_level === 'critical') {
+      await sendCriticalAlerts(petData);
+    }
+    
+    res.json({ message: 'Pet added successfully', id: petId });
+  } catch (error) {
+    console.error('Error processing webhook:', error);
+    res.status(500).json({ error: 'Webhook processing failed' });
+  }
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'healthy', 
+    timestamp: new Date().toISOString(),
+    version: process.env.npm_package_version || '1.0.0'
+  });
+});
+
+// Function to send critical alerts
+const sendCriticalAlerts = async (pet) => {
+  try {
+    const subscribers = await pool.query(`
+      SELECT email FROM alert_subscriptions 
+      WHERE (states IS NULL OR states::jsonb ? $1)
+      AND (species IS NULL OR species::jsonb ? $2)
+    `, [pet.state, pet.species]);
+    
+    // Here you would integrate with an email service like SendGrid or Mailgun
+    console.log(`Would send alerts to ${subscribers.rows.length} subscribers for ${pet.name}`);
+  } catch (error) {
+    console.error('Error sending alerts:', error);
+  }
+};
+
+// Add table for subscriptions
+const createSubscriptionsTable = async () => {
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS alert_subscriptions (
+      id SERIAL PRIMARY KEY,
+      email VARCHAR(255) UNIQUE NOT NULL,
+      states JSONB,
+      species JSONB,
+      created_at TIMESTAMP DEFAULT NOW(),
+      updated_at TIMESTAMP DEFAULT NOW()
+    );
+  `);
+};
