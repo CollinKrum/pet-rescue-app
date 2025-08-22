@@ -16,10 +16,13 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3001;
 
-// Database connection
+// Database connection (Railway Postgres)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
-  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
+  ssl: {
+    require: true,
+    rejectUnauthorized: false, // Required for Railway
+  },
 });
 
 // Middleware
@@ -112,7 +115,6 @@ const savePetToDB = async (pet) => {
 // ---------------------------------------------------------------- //
 
 class PetfinderScraper {
-  // ... (Your existing PetfinderScraper class) ...
   constructor() {
     this.baseUrl = 'https://www.petfinder.com';
     this.searchUrl = 'https://www.petfinder.com/search/pets-for-adoption';
@@ -157,7 +159,6 @@ class PetfinderScraper {
 }
 
 class AdoptAPetScraper {
-  // ... (Your existing AdoptAPetScraper class) ...
   constructor() {
     this.baseUrl = 'https://www.adopt-a-pet.com';
   }
@@ -209,69 +210,67 @@ class AdoptAPetScraper {
 }
 
 class FacebookGroupScraper {
-    // ... (Your existing FacebookGroupScraper class) ...
-    constructor() {
-      this.accessToken = process.env.FACEBOOK_ACCESS_TOKEN;
-    }
+  constructor() {
+    this.accessToken = process.env.FACEBOOK_ACCESS_TOKEN;
+  }
   
-    async scrapePosts(groupId) {
-      try {
-        const response = await axios.get(
-          `https://graph.facebook.com/v18.0/${groupId}/feed`,
-          {
-            params: {
-              access_token: this.accessToken,
-              fields: 'message,created_time,attachments'
-            }
+  async scrapePosts(groupId) {
+    try {
+      const response = await axios.get(
+        `https://graph.facebook.com/v18.0/${groupId}/feed`,
+        {
+          params: {
+            access_token: this.accessToken,
+            fields: 'message,created_time,attachments'
           }
-        );
+        }
+      );
   
-        const posts = response.data.data;
-        const pets = [];
+      const posts = response.data.data;
+      const pets = [];
   
-        posts.forEach(post => {
-          if (this.isPetPost(post.message)) {
-            const pet = this.extractPetInfo(post);
-            if (pet) pets.push(pet);
-          }
-        });
+      posts.forEach(post => {
+        if (this.isPetPost(post.message)) {
+          const pet = this.extractPetInfo(post);
+          if (pet) pets.push(pet);
+        }
+      });
   
-        return pets;
-      } catch (error) {
-        console.error('Error scraping Facebook:', error);
-        return [];
-      }
+      return pets;
+    } catch (error) {
+      console.error('Error scraping Facebook:', error);
+      return [];
     }
+  }
   
-    isPetPost(message) {
-      if (!message) return false;
-      const keywords = ['adopt', 'rescue', 'shelter', 'euthanize', 'urgent', 'foster'];
-      return keywords.some(keyword => message.toLowerCase().includes(keyword));
-    }
+  isPetPost(message) {
+    if (!message) return false;
+    const keywords = ['adopt', 'rescue', 'shelter', 'euthanize', 'urgent', 'foster'];
+    return keywords.some(keyword => message.toLowerCase().includes(keyword));
+  }
   
-    extractPetInfo(post) {
-      const message = post.message || '';
-      
-      return {
-        name: this.extractName(message),
-        description: message.substring(0, 200),
-        source_name: 'Facebook Group',
-        source_url: `https://facebook.com/${post.id}`,
-        posted_date: new Date(post.created_time)
-      };
-    }
+  extractPetInfo(post) {
+    const message = post.message || '';
+    
+    return {
+      name: this.extractName(message),
+      description: message.substring(0, 200),
+      source_name: 'Facebook Group',
+      source_url: `https://facebook.com/${post.id}`,
+      posted_date: new Date(post.created_time)
+    };
+  }
   
-    extractName(message) {
-      const nameMatch = message.match(/name[:\s]*([A-Z][a-z]+)/i);
-      return nameMatch ? nameMatch[1] : 'Unknown';
-    }
+  extractName(message) {
+    const nameMatch = message.match(/name[:\s]*([A-Z][a-z]+)/i);
+    return nameMatch ? nameMatch[1] : 'Unknown';
+  }
 }
 
 // ---------------------------------------------------------------- //
 // Utility and Helper Functions                                     //
 // ---------------------------------------------------------------- //
 
-// Urgency calculator
 class UrgencyCalculator {
   static calculateUrgency(pet) {
     if (pet.days_until_euthanasia <= 3) return 'critical';
@@ -283,27 +282,19 @@ class UrgencyCalculator {
 
 const processScrapedPets = async (scrapedPets) => {
   for (const pet of scrapedPets) {
-    // Extract state from location
     pet.state = extractStateFromLocation(pet.location);
-    
-    // Calculate urgency
     pet.urgency_level = UrgencyCalculator.calculateUrgency(pet);
-    
-    // Set default posted date if not provided
     pet.posted_date = pet.posted_date || new Date();
-    
     await savePetToDB(pet);
   }
 };
 
 const extractStateFromLocation = (location) => {
   if (!location) return null;
-  
   const stateMatch = location.match(/,\s*([A-Z]{2})/);
   return stateMatch ? stateMatch[1] : null;
 };
 
-// Function to send critical alerts
 const sendCriticalAlerts = async (pet) => {
   try {
     const subscribers = await pool.query(`
@@ -312,7 +303,6 @@ const sendCriticalAlerts = async (pet) => {
       AND (species IS NULL OR species::jsonb ? $2)
     `, [pet.state, pet.species]);
     
-    // Here you would integrate with an email service like SendGrid or Mailgun
     console.log(`Would send alerts to ${subscribers.rows.length} subscribers for ${pet.name}`);
   } catch (error) {
     console.error('Error sending alerts:', error);
@@ -406,7 +396,6 @@ app.get('/api/pets/:id', async (req, res) => {
   }
 });
 
-// Complete stats endpoint
 app.get('/api/stats', async (req, res) => {
   try {
     const stats = await pool.query(`
@@ -430,12 +419,10 @@ app.get('/api/stats', async (req, res) => {
   }
 });
 
-// Manual scraping trigger (for admin)
 app.post('/api/admin/scrape', async (req, res) => {
   try {
     const { location, species } = req.body;
     
-    // Run scrapers
     const petfinderScraper = new PetfinderScraper();
     const adoptAPetScraper = new AdoptAPetScraper();
     
@@ -457,12 +444,10 @@ app.post('/api/admin/scrape', async (req, res) => {
   }
 });
 
-// Email alerts for critical cases
 app.post('/api/alerts/subscribe', async (req, res) => {
   try {
     const { email, states, species } = req.body;
     
-    // Store subscription in database
     await pool.query(`
       INSERT INTO alert_subscriptions (email, states, species, created_at)
       VALUES ($1, $2, $3, NOW())
@@ -477,18 +462,15 @@ app.post('/api/alerts/subscribe', async (req, res) => {
   }
 });
 
-// Webhook for external integrations
 app.post('/api/webhook/new-pet', async (req, res) => {
   try {
     const petData = req.body;
     
-    // Validate and process incoming pet data
     petData.urgency_level = UrgencyCalculator.calculateUrgency(petData);
     petData.state = extractStateFromLocation(petData.location);
     
     const petId = await savePetToDB(petData);
     
-    // Trigger alerts for critical cases
     if (petData.urgency_level === 'critical') {
       await sendCriticalAlerts(petData);
     }
@@ -500,7 +482,6 @@ app.post('/api/webhook/new-pet', async (req, res) => {
   }
 });
 
-// Health check endpoint
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'healthy', 
@@ -513,28 +494,26 @@ app.get('/health', (req, res) => {
 // Server Initialization                                            //
 // ---------------------------------------------------------------- //
 
-// This function wraps the server startup process to ensure the database
-// is initialized before the server starts listening for requests.
 const startServer = async () => {
-    try {
-        await initDatabase();
+  try {
+    await initDatabase();
 
-        app.listen(PORT, () => {
-            console.log(`Server is listening on port ${PORT}`);
-        });
+    app.listen(PORT, () => {
+      console.log(`Server is listening on port ${PORT}`);
+    });
 
-        // Uncomment this to run the scraper on a schedule
-        // cron.schedule('0 0 * * *', async () => {
-        //   console.log('Running scheduled scraping job...');
-        //   const scraper = new PetfinderScraper();
-        //   const pets = await scraper.scrapePets('new york, ny');
-        //   await processScrapedPets(pets);
-        //   console.log('Scheduled scraping job completed.');
-        // });
+    // Uncomment this to run the scraper on a schedule
+    // cron.schedule('0 0 * * *', async () => {
+    //   console.log('Running scheduled scraping job...');
+    //   const scraper = new PetfinderScraper();
+    //   const pets = await scraper.scrapePets('new york, ny');
+    //   await processScrapedPets(pets);
+    //   console.log('Scheduled scraping job completed.');
+    // });
 
-    } catch (error) {
-        console.error('Failed to start server:', error);
-    }
+  } catch (error) {
+    console.error('Failed to start server:', error);
+  }
 };
 
 startServer();
