@@ -502,35 +502,47 @@ const startServer = async () => {
       console.log(`Server is listening on port ${PORT}`);
     });
 
-     Uncomment this to run the scraper on a schedule
- Schedule daily scraping at 2 AM server time
-cron.schedule('0 2 * * *', async () => {
-  console.log('Running scheduled scraping job...');
-
+  const startServer = async () => {
   try {
-    const locations = ['New York, NY', 'Los Angeles, CA', 'Miami, FL', 'Dallas, TX'];
-    const speciesList = ['dog', 'cat'];
+    await initDatabase();
 
-    for (const location of locations) {
-      for (const species of speciesList) {
-        const petfinderScraper = new PetfinderScraper();
-        const adoptAPetScraper = new AdoptAPetScraper();
+    app.listen(PORT, () => {
+      console.log(`Server is listening on port ${PORT}`);
+    });
 
-        const [petfinderPets, adoptAPetPets] = await Promise.all([
-          petfinderScraper.scrapePets(location, species),
-          adoptAPetScraper.scrapePets(location, species)
-        ]);
+    // Schedule daily scraping at 2 AM server time
+    cron.schedule('0 2 * * *', async () => {
+      console.log('Running scheduled scraping job...');
 
-        const allPets = [...petfinderPets, ...adoptAPetPets];
-        await processScrapedPets(allPets);
-        console.log(`Scraped ${allPets.length} pets from ${location} (${species})`);
+      try {
+        const locations = ['New York, NY', 'Los Angeles, CA', 'Miami, FL', 'Dallas, TX'];
+        const speciesList = ['dog', 'cat'];
+
+        for (const location of locations) {
+          for (const species of speciesList) {
+            const petfinderScraper = new PetfinderScraper();
+            const adoptAPetScraper = new AdoptAPetScraper();
+
+            const [petfinderPets, adoptAPetPets] = await Promise.all([
+              petfinderScraper.scrapePets(location, species),
+              adoptAPetScraper.scrapePets(location, species)
+            ]);
+
+            const allPets = [...petfinderPets, ...adoptAPetPets];
+            await processScrapedPets(allPets);
+            console.log(`Scraped ${allPets.length} pets from ${location} (${species})`);
+          }
+        }
+
+        console.log('Scheduled scraping job completed.');
+      } catch (error) {
+        console.error('Error in scheduled scraping job:', error);
       }
-    }
+    });
 
-    console.log('Scheduled scraping job completed.');
   } catch (error) {
-    console.error('Error in scheduled scraping job:', error);
+    console.error('Error starting server:', error);
   }
-});
+};
 
 startServer();
