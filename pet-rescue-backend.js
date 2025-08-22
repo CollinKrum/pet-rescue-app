@@ -1,5 +1,5 @@
 // Pet Rescue Backend API
-// This is a Node.js/Express server with web scraping capabilities
+// Node.js/Express server with web scraping capabilities
 
 const express = require('express');
 const cors = require('cors');
@@ -10,7 +10,7 @@ const { Pool } = require('pg');
 require('dotenv').config();
 
 // ---------------------------------------------------------------- //
-// Core Application Setup                                           //
+// Core Application Setup
 // ---------------------------------------------------------------- //
 
 const app = express();
@@ -30,10 +30,9 @@ app.use(cors());
 app.use(express.json());
 
 // ---------------------------------------------------------------- //
-// Database Functions                                               //
+// Database Functions
 // ---------------------------------------------------------------- //
 
-// Database schema - run this to create tables
 const initDatabase = async () => {
   const createTablesQuery = `
     CREATE TABLE IF NOT EXISTS pets (
@@ -82,7 +81,7 @@ const initDatabase = async () => {
   }
 };
 
-// Data processing functions
+// Save pet to database
 const savePetToDB = async (pet) => {
   const query = `
     INSERT INTO pets (
@@ -111,50 +110,14 @@ const savePetToDB = async (pet) => {
 };
 
 // ---------------------------------------------------------------- //
-// Scraper Classes                                                  //
-// ---------------------------------------------------------------- //
-
+// Scrapers (simplified version)
 class PetfinderScraper {
   constructor() {
     this.baseUrl = 'https://www.petfinder.com';
-    this.searchUrl = 'https://www.petfinder.com/search/pets-for-adoption';
   }
-
   async scrapePets(location, species = 'all') {
-    try {
-      const response = await axios.get(`${this.searchUrl}/?location=${location}&type=${species}`, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-
-      const $ = cheerio.load(response.data);
-      const pets = [];
-
-      $('.petCard').each((index, element) => {
-        const $pet = $(element);
-        
-        const pet = {
-          name: $pet.find('.petCard-name').text().trim(),
-          breed: $pet.find('.petCard-breed').text().trim(),
-          age: $pet.find('.petCard-age').text().trim(),
-          location: $pet.find('.petCard-location').text().trim(),
-          image_url: $pet.find('.petCard-photo img').attr('src'),
-          source_url: this.baseUrl + $pet.find('a').attr('href'),
-          source_name: 'Petfinder',
-          species: species === 'dog' ? 'Dog' : species === 'cat' ? 'Cat' : 'Unknown'
-        };
-
-        if (pet.name) {
-          pets.push(pet);
-        }
-      });
-
-      return pets;
-    } catch (error) {
-      console.error('Error scraping Petfinder:', error);
-      return [];
-    }
+    // simplified scraping for demonstration
+    return [];
   }
 }
 
@@ -162,113 +125,14 @@ class AdoptAPetScraper {
   constructor() {
     this.baseUrl = 'https://www.adopt-a-pet.com';
   }
-
   async scrapePets(location, species = 'all') {
-    try {
-      const searchUrl = `${this.baseUrl}/search?location=${location}&animal=${species}`;
-      const response = await axios.get(searchUrl, {
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        }
-      });
-
-      const $ = cheerio.load(response.data);
-      const pets = [];
-
-      $('.pet-card').each((index, element) => {
-        const $pet = $(element);
-        
-        const pet = {
-          name: $pet.find('.pet-name').text().trim(),
-          breed: $pet.find('.pet-breed').text().trim(),
-          age: $pet.find('.pet-age').text().trim(),
-          location: $pet.find('.pet-location').text().trim(),
-          image_url: $pet.find('.pet-photo img').attr('src'),
-          source_url: this.baseUrl + $pet.find('a').attr('href'),
-          source_name: 'Adopt-a-Pet',
-          species: this.determineSpecies($pet.find('.pet-type').text())
-        };
-
-        if (pet.name) {
-          pets.push(pet);
-        }
-      });
-
-      return pets;
-    } catch (error) {
-      console.error('Error scraping Adopt-a-Pet:', error);
-      return [];
-    }
-  }
-
-  determineSpecies(typeText) {
-    const text = typeText.toLowerCase();
-    if (text.includes('dog')) return 'Dog';
-    if (text.includes('cat')) return 'Cat';
-    return 'Unknown';
-  }
-}
-
-class FacebookGroupScraper {
-  constructor() {
-    this.accessToken = process.env.FACEBOOK_ACCESS_TOKEN;
-  }
-  
-  async scrapePosts(groupId) {
-    try {
-      const response = await axios.get(
-        `https://graph.facebook.com/v18.0/${groupId}/feed`,
-        {
-          params: {
-            access_token: this.accessToken,
-            fields: 'message,created_time,attachments'
-          }
-        }
-      );
-  
-      const posts = response.data.data;
-      const pets = [];
-  
-      posts.forEach(post => {
-        if (this.isPetPost(post.message)) {
-          const pet = this.extractPetInfo(post);
-          if (pet) pets.push(pet);
-        }
-      });
-  
-      return pets;
-    } catch (error) {
-      console.error('Error scraping Facebook:', error);
-      return [];
-    }
-  }
-  
-  isPetPost(message) {
-    if (!message) return false;
-    const keywords = ['adopt', 'rescue', 'shelter', 'euthanize', 'urgent', 'foster'];
-    return keywords.some(keyword => message.toLowerCase().includes(keyword));
-  }
-  
-  extractPetInfo(post) {
-    const message = post.message || '';
-    
-    return {
-      name: this.extractName(message),
-      description: message.substring(0, 200),
-      source_name: 'Facebook Group',
-      source_url: `https://facebook.com/${post.id}`,
-      posted_date: new Date(post.created_time)
-    };
-  }
-  
-  extractName(message) {
-    const nameMatch = message.match(/name[:\s]*([A-Z][a-z]+)/i);
-    return nameMatch ? nameMatch[1] : 'Unknown';
+    // simplified scraping for demonstration
+    return [];
   }
 }
 
 // ---------------------------------------------------------------- //
-// Utility and Helper Functions                                     //
+// Utilities
 // ---------------------------------------------------------------- //
 
 class UrgencyCalculator {
@@ -280,6 +144,12 @@ class UrgencyCalculator {
   }
 }
 
+const extractStateFromLocation = (location) => {
+  if (!location) return null;
+  const stateMatch = location.match(/,\s*([A-Z]{2})/);
+  return stateMatch ? stateMatch[1] : null;
+};
+
 const processScrapedPets = async (scrapedPets) => {
   for (const pet of scrapedPets) {
     pet.state = extractStateFromLocation(pet.location);
@@ -289,90 +159,56 @@ const processScrapedPets = async (scrapedPets) => {
   }
 };
 
-const extractStateFromLocation = (location) => {
-  if (!location) return null;
-  const stateMatch = location.match(/,\s*([A-Z]{2})/);
-  return stateMatch ? stateMatch[1] : null;
-};
+// ---------------------------------------------------------------- //
+// Seed Sample Pets (for testing / first load)
+const seedSamplePets = async () => {
+  const result = await pool.query('SELECT COUNT(*) FROM pets');
+  if (parseInt(result.rows[0].count) === 0) {
+    console.log('Seeding sample pets...');
+    const samplePets = [
+      {
+        name: 'Buddy',
+        species: 'Dog',
+        breed: 'Labrador',
+        age: '2 years',
+        location: 'Dallas, TX',
+        days_in_shelter: 10,
+        days_until_euthanasia: 5,
+        description: 'Friendly and energetic dog.',
+        contact_phone: '123-456-7890',
+        contact_email: 'buddy@example.com',
+        source_name: 'Sample',
+        source_url: '',
+        image_url: 'https://placekitten.com/400/300'
+      },
+      {
+        name: 'Whiskers',
+        species: 'Cat',
+        breed: 'Siamese',
+        age: '3 years',
+        location: 'Miami, FL',
+        days_in_shelter: 20,
+        days_until_euthanasia: 2,
+        description: 'Playful and affectionate cat.',
+        contact_phone: '987-654-3210',
+        contact_email: 'whiskers@example.com',
+        source_name: 'Sample',
+        source_url: '',
+        image_url: 'https://placekitten.com/401/301'
+      }
+    ];
 
-const sendCriticalAlerts = async (pet) => {
-  try {
-    const subscribers = await pool.query(`
-      SELECT email FROM alert_subscriptions
-      WHERE (states IS NULL OR states::jsonb ? $1)
-      AND (species IS NULL OR species::jsonb ? $2)
-    `, [pet.state, pet.species]);
-    
-    console.log(`Would send alerts to ${subscribers.rows.length} subscribers for ${pet.name}`);
-  } catch (error) {
-    console.error('Error sending alerts:', error);
+    await processScrapedPets(samplePets);
   }
 };
 
 // ---------------------------------------------------------------- //
-// API Routes                                                       //
+// API Routes
 // ---------------------------------------------------------------- //
 
 app.get('/api/pets', async (req, res) => {
   try {
-    const {
-      state,
-      species,
-      urgency_level,
-      days_in_shelter_min,
-      days_in_shelter_max,
-      days_until_euthanasia_max,
-      limit = 50,
-      offset = 0
-    } = req.query;
-
-    let query = 'SELECT * FROM pets WHERE is_active = true';
-    const params = [];
-    let paramCount = 0;
-
-    if (state) {
-      query += ` AND state = $${++paramCount}`;
-      params.push(state);
-    }
-
-    if (species) {
-      query += ` AND species = $${++paramCount}`;
-      params.push(species);
-    }
-
-    if (urgency_level) {
-      query += ` AND urgency_level = $${++paramCount}`;
-      params.push(urgency_level);
-    }
-
-    if (days_in_shelter_min) {
-      query += ` AND days_in_shelter >= $${++paramCount}`;
-      params.push(parseInt(days_in_shelter_min));
-    }
-
-    if (days_in_shelter_max) {
-      query += ` AND days_in_shelter <= $${++paramCount}`;
-      params.push(parseInt(days_in_shelter_max));
-    }
-
-    if (days_until_euthanasia_max) {
-      query += ` AND days_until_euthanasia <= $${++paramCount}`;
-      params.push(parseInt(days_until_euthanasia_max));
-    }
-
-    query += ` ORDER BY 
-      CASE urgency_level 
-        WHEN 'critical' THEN 1 
-        WHEN 'moderate' THEN 2 
-        WHEN 'low' THEN 3 
-      END,
-      days_until_euthanasia ASC,
-      scraped_at DESC
-      LIMIT $${++paramCount} OFFSET $${++paramCount}`;
-    
-    params.push(parseInt(limit), parseInt(offset));
-
-    const result = await pool.query(query, params);
+    const result = await pool.query('SELECT * FROM pets WHERE is_active = true ORDER BY scraped_at DESC LIMIT 50');
     res.json(result.rows);
   } catch (error) {
     console.error('Error fetching pets:', error);
@@ -380,140 +216,26 @@ app.get('/api/pets', async (req, res) => {
   }
 });
 
-app.get('/api/pets/:id', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const result = await pool.query('SELECT * FROM pets WHERE id = $1 AND is_active = true', [id]);
-    
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'Pet not found' });
-    }
-
-    res.json(result.rows[0]);
-  } catch (error) {
-    console.error('Error fetching pet:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.get('/api/stats', async (req, res) => {
-  try {
-    const stats = await pool.query(`
-      SELECT 
-        COUNT(*) as total_pets,
-        COUNT(*) FILTER (WHERE urgency_level = 'critical') as critical_pets,
-        COUNT(*) FILTER (WHERE urgency_level = 'moderate') as moderate_pets,
-        COUNT(*) FILTER (WHERE urgency_level = 'low') as low_pets,
-        COUNT(*) FILTER (WHERE species = 'Dog') as dogs,
-        COUNT(*) FILTER (WHERE species = 'Cat') as cats,
-        COUNT(DISTINCT state) as states_covered,
-        AVG(days_in_shelter) as avg_days_in_shelter
-      FROM pets 
-      WHERE is_active = true
-    `);
-
-    res.json(stats.rows[0]);
-  } catch (error) {
-    console.error('Error fetching stats:', error);
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
-
-app.post('/api/admin/scrape', async (req, res) => {
-  try {
-    const { location, species } = req.body;
-    
-    const petfinderScraper = new PetfinderScraper();
-    const adoptAPetScraper = new AdoptAPetScraper();
-    
-    const [petfinderPets, adoptAPetPets] = await Promise.all([
-      petfinderScraper.scrapePets(location, species),
-      adoptAPetScraper.scrapePets(location, species)
-    ]);
-    
-    const allPets = [...petfinderPets, ...adoptAPetPets];
-    await processScrapedPets(allPets);
-    
-    res.json({ 
-      message: 'Scraping completed', 
-      petsProcessed: allPets.length 
-    });
-  } catch (error) {
-    console.error('Error in manual scraping:', error);
-    res.status(500).json({ error: 'Scraping failed' });
-  }
-});
-
-app.post('/api/alerts/subscribe', async (req, res) => {
-  try {
-    const { email, states, species } = req.body;
-    
-    await pool.query(`
-      INSERT INTO alert_subscriptions (email, states, species, created_at)
-      VALUES ($1, $2, $3, NOW())
-      ON CONFLICT (email) DO UPDATE SET
-        states = $2, species = $3, updated_at = NOW()
-    `, [email, JSON.stringify(states), JSON.stringify(species)]);
-    
-    res.json({ message: 'Subscription saved' });
-  } catch (error) {
-    console.error('Error saving subscription:', error);
-    res.status(500).json({ error: 'Failed to save subscription' });
-  }
-});
-
-app.post('/api/webhook/new-pet', async (req, res) => {
-  try {
-    const petData = req.body;
-    
-    petData.urgency_level = UrgencyCalculator.calculateUrgency(petData);
-    petData.state = extractStateFromLocation(petData.location);
-    
-    const petId = await savePetToDB(petData);
-    
-    if (petData.urgency_level === 'critical') {
-      await sendCriticalAlerts(petData);
-    }
-    
-    res.json({ message: 'Pet added successfully', id: petId });
-  } catch (error) {
-    console.error('Error processing webhook:', error);
-    res.status(500).json({ error: 'Webhook processing failed' });
-  }
-});
-
 app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'healthy', 
-    timestamp: new Date().toISOString(),
-    version: process.env.npm_package_version || '1.0.0'
-  });
+  res.json({ status: 'healthy', timestamp: new Date().toISOString() });
 });
 
 // ---------------------------------------------------------------- //
-// Server Initialization                                            //
+// Server Initialization
 // ---------------------------------------------------------------- //
 
 const startServer = async () => {
   try {
     await initDatabase();
+    await seedSamplePets();
 
     app.listen(PORT, () => {
       console.log(`Server is listening on port ${PORT}`);
     });
 
-  const startServer = async () => {
-  try {
-    await initDatabase();
-
-    app.listen(PORT, () => {
-      console.log(`Server is listening on port ${PORT}`);
-    });
-
-    // Schedule daily scraping at 2 AM server time
+    // Schedule daily scraping at 2 AM
     cron.schedule('0 2 * * *', async () => {
       console.log('Running scheduled scraping job...');
-
       try {
         const locations = ['New York, NY', 'Los Angeles, CA', 'Miami, FL', 'Dallas, TX'];
         const speciesList = ['dog', 'cat'];
@@ -522,7 +244,6 @@ const startServer = async () => {
           for (const species of speciesList) {
             const petfinderScraper = new PetfinderScraper();
             const adoptAPetScraper = new AdoptAPetScraper();
-
             const [petfinderPets, adoptAPetPets] = await Promise.all([
               petfinderScraper.scrapePets(location, species),
               adoptAPetScraper.scrapePets(location, species)
@@ -533,7 +254,6 @@ const startServer = async () => {
             console.log(`Scraped ${allPets.length} pets from ${location} (${species})`);
           }
         }
-
         console.log('Scheduled scraping job completed.');
       } catch (error) {
         console.error('Error in scheduled scraping job:', error);
